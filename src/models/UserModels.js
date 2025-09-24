@@ -9,6 +9,13 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    name: {
+        type: String,
+        required: true,
+    },
+    profile: {
+        type: String,
+    },
     email: {
         type: String,
         unique: true,
@@ -18,13 +25,14 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    type: {
+    role: {
         type: String,
         required: true,
         enum: {
-            values: ["admin", "user"],
+            values: ["admin", "user", "seller"],
             message: "{VALUE} is not valid !",
         },
+        default: "user",
     },
     address: {
         type: String,

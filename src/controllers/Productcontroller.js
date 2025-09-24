@@ -5,6 +5,7 @@ const createProduct = async (req, res) => {
     const { title, coverProfile, images, description, categories, brand, stock, prices, featured } = req.body;
 
     try {
+        const user = req.user;
         // ✅ Required fields check
         if (!title || title.length < 3) {
             return res.status(400).json({ success: false, message: "Title is required (min 3 chars)" });
@@ -49,6 +50,7 @@ const createProduct = async (req, res) => {
             stock,
             prices,
             featured: featured || false, // default false if not provided
+            createdBy: user._id,
         });
 
         // ✅ Save product
@@ -59,6 +61,30 @@ const createProduct = async (req, res) => {
         res.status(400).json({ success: false, message: error.message });
     }
 };
+
+// find products for particular user added products 
+const fetchparticularuserproducts = async (req, res) => {
+    try {
+        const user = req.user;
+
+        // ✅ fetch only products created by this user
+        const products = await ProductModel.find({ createdBy: user._id });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: "user not found !" });
+        }
+
+        if (!products) {
+            return res.status(404).json({ success: false, message: "products not found !" });
+        }
+
+        return res.status(200).json({ success: true, count: products.length, data: products });
+
+    }
+    catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}
 
 // get all products 
 const allproducts = async (req, res) => {
@@ -180,4 +206,4 @@ const searchbycategories = async (req, res) => {
 
 
 
-module.exports = { createProduct, allproducts, singleproduct, searchproducts, searchbydate, searchbycategories };
+module.exports = { createProduct, allproducts, singleproduct, searchproducts, searchbydate, searchbycategories, fetchparticularuserproducts };

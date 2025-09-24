@@ -2,15 +2,27 @@ const UserModel = require("../models/UserModels");
 const bcrypt = require("bcrypt");
 const validator = require("validator");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const ImageKit = require("imagekit");
 
 
 const CreateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECREAT, { expiresIn: "1d" });
 }
 
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
+// imagekit setup
+const imagekit = new ImageKit({
+    publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
+    privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
+    urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
+});
+
 // register 
 const register = async (req, res) => {
-    const { firstName, lastName, email, password, type } = req.body;
+    const { firstName, lastName, name, email, password, role } = req.body;
     try {
         const exist = await UserModel.findOne({ email });
 
@@ -19,10 +31,16 @@ const register = async (req, res) => {
             return res.status(400).json({ success: false, message: "User alredy existed !" });
         }
 
-        // first name & last name 
-        if (firstName.length < 5 || lastName.length < 5) {
-            return res.status(400).json({ success: false, message: "first & last names mu be more then 5 characters " })
+        // first name 
+        if (firstName.length < 5) {
+            return res.status(400).json({ success: false, message: "first name mu be more then 5 characters " })
         }
+
+        //  last name 
+        if (!lastName) {
+            return res.status(400).json({ success: false, message: "last name is required !" })
+        }
+
 
         // password 
         if (!password) {
@@ -45,7 +63,7 @@ const register = async (req, res) => {
 
         // saving user data in db 
         const newuser = new UserModel({
-            firstName, lastName, email, password: hashedpasssword, type
+            firstName, lastName, name, email, password: hashedpasssword, role
         });
 
 
@@ -67,7 +85,7 @@ const register = async (req, res) => {
 
 // login 
 const loginuser = async (req, res) => {
-    const { email, password, type } = req.body;
+    const { email, password, role } = req.body;
     try {
         const user = await UserModel.findOne({ email });
 
@@ -81,8 +99,8 @@ const loginuser = async (req, res) => {
             return res.status(400).json({ success: false, message: "password required !" });
         }
 
-        if (!type || user.type !== type) {
-            return res.status(403).json({ success: false, message: "Invalid user type" });
+        if (!role || user.role !== role) {
+            return res.status(403).json({ success: false, message: "Invalid user role" });
         }
 
 
@@ -103,16 +121,21 @@ const loginuser = async (req, res) => {
     }
 }
 
-
-// get all users list 
+// get all users list admin only
 const userlist = async (req, res) => {
+
     try {
         const users = await UserModel.find({});
-        if (!users) {
+        if (!users || users.length === 0) {
             return res.status(400).json({ success: false, message: "No data found !" });
         }
 
-        return res.status(200).json({ success: true, data: users });
+        const logidinsuer = req.user;
+        if (!logidinsuer || logidinsuer.role !== "admin" && logidinsuer.role !== "seller") {
+            return res.status(400).json({ success: false, message: "you dont have permision to visit !" });
+        }
+
+        return res.status(200).json({ success: true, count: users.length, data: users });
     }
     catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -133,8 +156,7 @@ const logeduser = async (req, res) => {
     }
 }
 
-
-// delete user account 
+// delete user account admin only
 const deleteuser = async (req, res) => {
     const { id } = req.params;
     try {
@@ -143,7 +165,7 @@ const deleteuser = async (req, res) => {
             return res.status(400).json({ success: false, message: "unauthorized user !" });
         }
 
-        const admin = req.user.type === 'admin';
+        const admin = req.user.role === 'admin';
         const self = req.user._id.toString() === id;
 
         if (!admin && !self) {
@@ -163,11 +185,16 @@ const deleteuser = async (req, res) => {
     }
 }
 
-// get sinle user by id 
+// get sinle user by id admin only
 const singleuser = async (req, res) => {
     const { id } = req.params;
     try {
         const user = await UserModel.findById(id);
+
+        const logidinsuer = req.user;
+        if (!logidinsuer || logidinsuer.role !== "admin" && logidinsuer.role !== "seller") {
+            return res.status(400).json({ success: false, message: "you dont have permision to visit !" });
+        }
 
         // user or not in db 
         if (!user) {
@@ -181,31 +208,49 @@ const singleuser = async (req, res) => {
     }
 }
 
-// update user profile 
+// update user profile
 const updateusers = async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, address } = req.body;
-    try {
 
+    try {
         let updatedata = {};
         if (firstName) updatedata.firstName = firstName;
         if (lastName) updatedata.lastName = lastName;
         if (address) updatedata.address = address;
 
-        const updateduser = await UserModel.findByIdAndUpdate(id, updatedata, { new: true });
+        // ✅ Upload to ImageKit if file exists
+        if (req.file) {
+            const uploadResponse = await imagekit.upload({
+                file: req.file.buffer,           // multer buffer
+                fileName: req.file.originalname, // keep original filename
+                folder: "user_profiles",         // optional folder in ImageKit
+            });
+
+            updatedata.profile = uploadResponse.url; // save only URL
+        }
+
+        const updateduser = await UserModel.findByIdAndUpdate(id, updatedata, {
+            new: true,
+        });
+
+        if (!updateduser) {
+            return res
+                .status(400)
+                .json({ success: false, message: "User not found !" });
+        }
 
         const { password: _, ...userWithoutPassword } = updateduser.toObject();
 
-        if (!updateduser) {
-            return res.status(400).json({ success: false, message: "User not found !" });
-        }
-        return res.status(200).json({ success: true, data: userWithoutPassword });
-
+        return res
+            .status(200)
+            .json({ success: true, data: userWithoutPassword });
+    } catch (error) {
+        res
+            .status(500)
+            .json({ success: false, message: error.message || "Internal server error !" });
     }
-    catch (error) {
-        res.status(500).json({ success: false, message: "Internal server error !" });
-    }
-}
+};
 
 
 // update password 
@@ -240,7 +285,7 @@ const updatepassword = async (req, res) => {
             return res.status(400).json({ success: false, message: "Password & confirm password do not match !" });
         }
 
-        if (user._id.toString() !== id && user.type !== "admin") {
+        if (user._id.toString() !== id && user.role !== "admin") {
             return res.status(400).json({ success: false, message: "Same user or admin can update !" })
         }
 
@@ -266,5 +311,76 @@ const updatepassword = async (req, res) => {
     }
 };
 
+// serch by user name admin only
+const searchbyusername = async (req, res) => {
+    const { name } = req.query;
+    try {
+        let users;
 
-module.exports = { register, loginuser, singleuser, deleteuser, userlist, logeduser, updateusers, updatepassword };
+        if (name) {
+            users = await UserModel.find({
+                name: { $regex: new RegExp("^" + name, "i") }
+            });
+        }
+        else {
+            users = await UserModel.find();
+        }
+
+        const logidinsuer = req.user;
+        if (!logidinsuer || logidinsuer.role !== "admin" && logidinsuer.role !== "seller") {
+            return res.status(400).json({ success: false, message: "you dont have permision to visit !" });
+        }
+
+        if (!users || users.length === 0) {
+            return res.status(400).json({ success: false, message: "users not found !" });
+        }
+
+        return res.status(200).json({ success: true, data: users });
+    }
+    catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}
+
+// filter users date vise admin only
+const filterusersdatevise = async (req, res) => {
+    const { startDate, endDate } = req.query;
+
+    const parseDate = (datestart, dateend = false) => {
+        if (!datestart) return null;
+        const [day, month, year] = datestart.split('-');
+        return new Date(`${year}-${month}-${day}T${dateend ? '23:59:59.999' : '00:00:00.000'}Z`)
+    }
+
+    try {
+        let query = {};
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ success: false, message: "start & end dates required !" });
+        }
+
+        const logidinsuer = req.user;
+        if (!logidinsuer || logidinsuer.role !== "admin" && logidinsuer.role !== "seller") {
+            return res.status(400).json({ success: false, message: "you dont have permision to visit !" });
+        }
+
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = parseDate(startDate);
+            if (endDate) query.createdAt.$lte = parseDate(endDate, true);
+        }
+
+        const users = await UserModel.find(query);
+
+        if (!users || users.length === 0) {
+            return res.status(404).json({ success: false, message: "No users found !" });
+        }
+
+        return res.status(200).json({ success: true, data: users, count: users.length });
+    }
+    catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}
+
+module.exports = { register, loginuser, singleuser, deleteuser, userlist, logeduser, updateusers, updatepassword, searchbyusername, filterusersdatevise };
