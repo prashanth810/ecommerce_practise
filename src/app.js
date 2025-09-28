@@ -5,6 +5,7 @@ const ConnectionDB = require("./config/Databse");
 const authrouter = require("./routes/Authroutes");
 const cookieparser = require("cookie-parser");
 const Productroute = require("./routes/Productroutes");
+const Cartroutes = require("./routes/Cartroutes");
 
 dotenv.config();
 
@@ -20,9 +21,10 @@ app.use(cookieparser());
 
 // login routes 
 app.use('/api/auth', authrouter);
-
 // product routes
 app.use('/api/auth', Productroute);
+// cart routes
+app.use("/api/auth", Cartroutes);
 
 
 app.get('/', (req, res) => {

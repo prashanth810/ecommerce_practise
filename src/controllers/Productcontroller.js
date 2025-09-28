@@ -6,6 +6,11 @@ const createProduct = async (req, res) => {
 
     try {
         const user = req.user;
+
+        if (!user || user.role !== "admin" && user.role !== "seller") {
+            return res.status(400).json({ success: false, message: "Access denied not authorized !" })
+        }
+
         // ✅ Required fields check
         if (!title || title.length < 3) {
             return res.status(400).json({ success: false, message: "Title is required (min 3 chars)" });
@@ -70,11 +75,15 @@ const fetchparticularuserproducts = async (req, res) => {
         // ✅ fetch only products created by this user
         const products = await ProductModel.find({ createdBy: user._id });
 
+        if (!user || user.role !== "admin" && user.role !== "seller") {
+            return res.status(400).json({ success: false, message: "Access denied not authorized !" })
+        }
+
         if (!user) {
             return res.status(404).json({ success: false, message: "user not found !" });
         }
 
-        if (!products) {
+        if (!products || products.length === 0) {
             return res.status(404).json({ success: false, message: "products not found !" });
         }
 
@@ -145,9 +154,10 @@ const searchproducts = async (req, res) => {
     }
 }
 
-// search by date name 
+// search by dates 
 const searchbydate = async (req, res) => {
     const { startDate, endDate } = req.query;
+    const user = req.user;
 
     // parse "DD-MM-YYYY" to Date object, with proper start/end of day
     const parseDate = (dateStr, isEnd = false) => {
@@ -158,6 +168,10 @@ const searchbydate = async (req, res) => {
 
     try {
         let query = {};
+
+        if (!user || user.role !== "admin" && user.role !== "seller") {
+            return res.status(400).json({ success: false, message: "Access denied no authorized" })
+        }
 
         if (startDate || endDate) {
             query.createdAt = {};
@@ -204,6 +218,10 @@ const searchbycategories = async (req, res) => {
     }
 }
 
+// update product
+
+
+// delete product
 
 
 module.exports = { createProduct, allproducts, singleproduct, searchproducts, searchbydate, searchbycategories, fetchparticularuserproducts };
